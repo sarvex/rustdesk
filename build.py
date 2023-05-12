@@ -14,7 +14,7 @@ windows = platform.platform().startswith('Windows')
 osx = platform.platform().startswith(
     'Darwin') or platform.platform().startswith("macOS")
 hbb_name = 'rustdesk' + ('.exe' if windows else '')
-exe_path = 'target/release/' + hbb_name
+exe_path = f'target/release/{hbb_name}'
 if windows:
     flutter_build_dir = 'build/windows/runner/Release/'
 elif osx:
@@ -26,9 +26,7 @@ skip_cargo = False
 
 def get_arch() -> str:
     custom_arch = os.environ.get("ARCH")
-    if custom_arch is None:
-        return "amd64"
-    return custom_arch
+    return "amd64" if custom_arch is None else custom_arch
 
 def system2(cmd):
     err = os.system(cmd)
@@ -188,11 +186,10 @@ def download_extract_features(features, res_dir):
     def req(url):
         if not proxy:
             return url
-        else:
-            r = urllib.request.Request(url)
-            r.set_proxy(proxy, 'http')
-            r.set_proxy(proxy, 'https')
-            return r
+        r = urllib.request.Request(url)
+        r.set_proxy(proxy, 'http')
+        r.set_proxy(proxy, 'https')
+        return r
 
     for (feat, feat_info) in features.items():
         includes = feat_info['include'] if 'include' in feat_info and feat_info['include'] else []
@@ -224,7 +221,7 @@ def download_extract_features(features, res_dir):
                     if file_exclude:
                         continue
 
-                    file_include = False if includes else True
+                    file_include = not includes
                     for p in includes:
                         if p.match(f) is not None:
                             file_include = True
@@ -266,8 +263,7 @@ def get_features(args):
     if args.hwcodec:
         features.append('hwcodec')
     if args.flutter:
-        features.append('flutter')
-        features.append('flutter_texture_render')
+        features.extend(('flutter', 'flutter_texture_render'))
     if args.flatpak:
         features.append('flatpak')
     if args.appimage:
@@ -278,7 +274,7 @@ def get_features(args):
 
 def generate_control_file(version):
     control_file_path = "../res/DEBIAN/control"
-    system2('/bin/rm -rf %s' % control_file_path)
+    system2(f'/bin/rm -rf {control_file_path}')
 
     content = """Package: rustdesk
 Version: %s
@@ -289,9 +285,8 @@ Depends: libgtk-3-0, libxcb-randr0, libxdo3, libxfixes3, libxcb-shape0, libxcb-x
 Description: A remote control software.
 
 """ % (version, get_arch())
-    file = open(control_file_path, "w")
-    file.write(content)
-    file.close()
+    with open(control_file_path, "w") as file:
+        file.write(content)
 
 
 def ffi_bindgen_function_refactor():
@@ -343,7 +338,7 @@ def build_flutter_deb(version, features):
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename('rustdesk.deb', f'../rustdesk-{version}.deb')
     os.chdir("..")
 
 def build_deb_from_folder(version, binary_folder):
@@ -377,7 +372,7 @@ def build_deb_from_folder(version, binary_folder):
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename('rustdesk.deb', f'../rustdesk-{version}.deb')
     os.chdir("..")
 
 def build_flutter_dmg(version, features):
@@ -453,8 +448,7 @@ def main():
     if args.skip_cargo:
         skip_cargo = True
     portable = args.portable
-    package = args.package
-    if package:
+    if package := args.package:
         build_deb_from_folder(version, package)
         return
     res_dir = 'resources'
@@ -468,11 +462,10 @@ def main():
         if flutter:
             build_flutter_windows(version, features)
             return
-        system2('cargo build --release --features ' + features)
+        system2(f'cargo build --release --features {features}')
         # system2('upx.exe target/release/rustdesk.exe')
         system2('mv target/release/rustdesk.exe target/release/RustDesk.exe')
-        pa = os.environ.get('P')
-        if pa:
+        if pa := os.environ.get('P'):
             system2(
                 f'signtool sign /a /v /p {pa} /debug /f .\\cert.pfx /t http://timestamp.digicert.com  '
                 'target\\release\\rustdesk.exe')
@@ -487,66 +480,63 @@ def main():
         system2('mv ../../{res_dir}/rustdesk-{version}-win7-install.exe ../..')
     elif os.path.isfile('/usr/bin/pacman'):
         # pacman -S -needed base-devel
-        system2("sed -i 's/pkgver=.*/pkgver=%s/g' res/PKGBUILD" % version)
+        system2(f"sed -i 's/pkgver=.*/pkgver={version}/g' res/PKGBUILD")
         if flutter:
             build_flutter_arch_manjaro(version, features)
         else:
-            system2('cargo build --release --features ' + features)
+            system2(f'cargo build --release --features {features}')
             system2('git checkout src/ui/common.tis')
             system2('strip target/release/rustdesk')
             system2('ln -s res/pacman_install && ln -s res/PKGBUILD')
             system2('HBB=`pwd` makepkg -f')
-        system2('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (
-            version, version))
-        # pacman -U ./rustdesk.pkg.tar.zst
-    elif os.path.isfile('/usr/bin/yum'):
-        system2('cargo build --release --features ' + features)
-        system2('strip target/release/rustdesk')
         system2(
-            "sed -i 's/Version:    .*/Version:    %s/g' res/rpm.spec" % version)
+            f'mv rustdesk-{version}-0-x86_64.pkg.tar.zst rustdesk-{version}-manjaro-arch.pkg.tar.zst'
+        )
+            # pacman -U ./rustdesk.pkg.tar.zst
+    elif os.path.isfile('/usr/bin/yum'):
+        system2(f'cargo build --release --features {features}')
+        system2('strip target/release/rustdesk')
+        system2(f"sed -i 's/Version:    .*/Version:    {version}/g' res/rpm.spec")
         system2('HBB=`pwd` rpmbuild -ba res/rpm.spec')
         system2(
-            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-fedora28-centos8.rpm' % (
-                version, version))
-        # yum localinstall rustdesk.rpm
+            f'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-{version}-0.x86_64.rpm ./rustdesk-{version}-fedora28-centos8.rpm'
+        )
+            # yum localinstall rustdesk.rpm
     elif os.path.isfile('/usr/bin/zypper'):
-        system2('cargo build --release --features ' + features)
+        system2(f'cargo build --release --features {features}')
         system2('strip target/release/rustdesk')
-        system2(
-            "sed -i 's/Version:    .*/Version:    %s/g' res/rpm-suse.spec" % version)
+        system2(f"sed -i 's/Version:    .*/Version:    {version}/g' res/rpm-suse.spec")
         system2('HBB=`pwd` rpmbuild -ba res/rpm-suse.spec')
         system2(
-            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (
-                version, version))
-        # yum localinstall rustdesk.rpm
-    else:
-        if flutter:
-            if osx:
-                build_flutter_dmg(version, features)
-                pass
-            else:
-                # system2(
-                #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
-                build_flutter_deb(version, features)
+            f'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-{version}-0.x86_64.rpm ./rustdesk-{version}-suse.rpm'
+        )
+            # yum localinstall rustdesk.rpm
+    elif flutter:
+        if osx:
+            build_flutter_dmg(version, features)
         else:
-            system2('cargo bundle --release --features ' + features)
-            if osx:
-                system2(
-                    'strip target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk')
-                system2(
-                    'cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS/')
-                # https://github.com/sindresorhus/create-dmg
-                system2('/bin/rm -rf *.dmg')
-                plist = "target/release/bundle/osx/RustDesk.app/Contents/Info.plist"
-                txt = open(plist).read()
-                with open(plist, "wt") as fh:
-                    fh.write(txt.replace("</dict>", """
+            # system2(
+            #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
+            build_flutter_deb(version, features)
+    else:
+        system2(f'cargo bundle --release --features {features}')
+        if osx:
+            system2(
+                'strip target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk')
+            system2(
+                'cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS/')
+            # https://github.com/sindresorhus/create-dmg
+            system2('/bin/rm -rf *.dmg')
+            plist = "target/release/bundle/osx/RustDesk.app/Contents/Info.plist"
+            txt = open(plist).read()
+            with open(plist, "wt") as fh:
+                fh.write(txt.replace("</dict>", """
     <key>LSUIElement</key>
     <string>1</string>
     </dict>"""))
-                pa = os.environ.get('P')
-                if pa:
-                    system2('''
+            pa = os.environ.get('P')
+            if pa:
+                system2('''
     # buggy: rcodesign sign ... path/*, have to sign one by one
     # install rcodesign via cargo install apple-codesign
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk
@@ -556,11 +546,10 @@ def main():
     codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/*
     codesign -s "Developer ID Application: {0}" --force --options runtime  ./target/release/bundle/osx/RustDesk.app
     '''.format(pa))
-                system2('create-dmg target/release/bundle/osx/RustDesk.app')
-                os.rename('RustDesk %s.dmg' %
-                          version, 'rustdesk-%s.dmg' % version)
-                if pa:
-                    system2('''
+            system2('create-dmg target/release/bundle/osx/RustDesk.app')
+            os.rename(f'RustDesk {version}.dmg', f'rustdesk-{version}.dmg')
+            if pa:
+                system2('''
     # https://pyoxidizer.readthedocs.io/en/apple-codesign-0.14.0/apple_codesign.html
     # https://pyoxidizer.readthedocs.io/en/stable/tugger_code_signing.html
     # https://developer.apple.com/developer-id/
@@ -573,45 +562,45 @@ def main():
     rcodesign notarize --api-issuer {2} --api-key {3} --staple ./rustdesk-{1}.dmg
     # verify:  spctl -a -t exec -v /Applications/RustDesk.app
     '''.format(pa, version, os.environ.get('api-issuer'), os.environ.get('api-key')))
-                else:
-                    print('Not signed')
             else:
-                # buid deb package
-                system2(
-                    'mv target/release/bundle/deb/rustdesk*.deb ./rustdesk.deb')
-                system2('dpkg-deb -R rustdesk.deb tmpdeb')
-                system2('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
-                system2(
-                    'cp res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
-                system2(
-                    'cp res/128x128@2x.png tmpdeb/usr/share/rustdesk/files/rustdesk.png')
-                system2(
-                    'cp res/rustdesk.desktop tmpdeb/usr/share/applications/rustdesk.desktop')
-                system2(
-                    'cp res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
-                os.system('mkdir -p tmpdeb/etc/rustdesk/')
-                os.system('cp -a res/startwm.sh tmpdeb/etc/rustdesk/')
-                os.system('mkdir -p tmpdeb/etc/X11/rustdesk/')
-                os.system('cp res/xorg.conf tmpdeb/etc/X11/rustdesk/')
-                os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')
-                os.system('mkdir -p tmpdeb/etc/pam.d/')
-                os.system('cp pam.d/rustdesk.debian tmpdeb/etc/pam.d/rustdesk')
-                system2('strip tmpdeb/usr/bin/rustdesk')
-                system2('mkdir -p tmpdeb/usr/lib/rustdesk')
-                system2('mv tmpdeb/usr/bin/rustdesk tmpdeb/usr/lib/rustdesk/')
-                system2('cp libsciter-gtk.so tmpdeb/usr/lib/rustdesk/')
-                md5_file('usr/share/rustdesk/files/systemd/rustdesk.service')
-                md5_file('etc/rustdesk/startwm.sh')
-                md5_file('etc/X11/rustdesk/xorg.conf')
-                md5_file('etc/pam.d/rustdesk')
-                md5_file('usr/lib/rustdesk/libsciter-gtk.so')
-                system2('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')
-                os.rename('rustdesk.deb', 'rustdesk-%s.deb' % version)
+                print('Not signed')
+        else:
+            # buid deb package
+            system2(
+                'mv target/release/bundle/deb/rustdesk*.deb ./rustdesk.deb')
+            system2('dpkg-deb -R rustdesk.deb tmpdeb')
+            system2('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
+            system2(
+                'cp res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
+            system2(
+                'cp res/128x128@2x.png tmpdeb/usr/share/rustdesk/files/rustdesk.png')
+            system2(
+                'cp res/rustdesk.desktop tmpdeb/usr/share/applications/rustdesk.desktop')
+            system2(
+                'cp res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
+            os.system('mkdir -p tmpdeb/etc/rustdesk/')
+            os.system('cp -a res/startwm.sh tmpdeb/etc/rustdesk/')
+            os.system('mkdir -p tmpdeb/etc/X11/rustdesk/')
+            os.system('cp res/xorg.conf tmpdeb/etc/X11/rustdesk/')
+            os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')
+            os.system('mkdir -p tmpdeb/etc/pam.d/')
+            os.system('cp pam.d/rustdesk.debian tmpdeb/etc/pam.d/rustdesk')
+            system2('strip tmpdeb/usr/bin/rustdesk')
+            system2('mkdir -p tmpdeb/usr/lib/rustdesk')
+            system2('mv tmpdeb/usr/bin/rustdesk tmpdeb/usr/lib/rustdesk/')
+            system2('cp libsciter-gtk.so tmpdeb/usr/lib/rustdesk/')
+            md5_file('usr/share/rustdesk/files/systemd/rustdesk.service')
+            md5_file('etc/rustdesk/startwm.sh')
+            md5_file('etc/X11/rustdesk/xorg.conf')
+            md5_file('etc/pam.d/rustdesk')
+            md5_file('usr/lib/rustdesk/libsciter-gtk.so')
+            system2('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')
+            os.rename('rustdesk.deb', f'rustdesk-{version}.deb')
 
 
 def md5_file(fn):
-    md5 = hashlib.md5(open('tmpdeb/' + fn, 'rb').read()).hexdigest()
-    system2('echo "%s %s" >> tmpdeb/DEBIAN/md5sums' % (md5, fn))
+    md5 = hashlib.md5(open(f'tmpdeb/{fn}', 'rb').read()).hexdigest()
+    system2(f'echo "{md5} {fn}" >> tmpdeb/DEBIAN/md5sums')
 
 
 if __name__ == "__main__":
