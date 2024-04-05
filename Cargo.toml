@@ -36,7 +36,7 @@ plugin_framework = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-whoami = "1.2"
+whoami = "1.5"
 scrap = { path = "libs/scrap", features = ["wayland"] }
 hbb_common = { path = "libs/hbb_common" }
 serde_derive = "1.0"
